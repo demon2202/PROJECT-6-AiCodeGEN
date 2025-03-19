@@ -66,8 +66,8 @@ Before setting up the project, ensure you have the following:
 
 1. **Clone the repository** (if you haven't already):
    ```bash
-   git clone [your-repository-url]
-   cd [repository-name]
+   git clone PROJECT-6-AutoCodex
+   cd PROJECT-6-AutoCodex
    ```
 
 2. **Create a Python virtual environment**:
