@@ -16,7 +16,7 @@
 11. [Security Considerations](#security-considerations)
 12. [Future Enhancements](#future-enhancements)
 13. [FAQ](#faq)
-14. [License](#license)
+
 
 ## Project Overview
 
