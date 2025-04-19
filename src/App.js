@@ -183,7 +183,7 @@ function CodeGenerator() {
   return (
     <div className="code-generator-container">
       <header>
-        <h1>Interactive Python Code Generator</h1>
+        <h1>AI CodeGen</h1>
         <button className="theme-toggle" onClick={toggleDarkMode}>
           {darkMode ? <Sun size={20} /> : <Moon size={20} />}
         </button>
@@ -258,10 +258,6 @@ function CodeGenerator() {
           </pre>
         </section>
       </main>
-
-      <footer>
-        <p>Built using React & Flask | Speech to Python Code</p>
-      </footer>
     </div>
   );
 }
