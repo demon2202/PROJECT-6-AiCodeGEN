@@ -7,7 +7,7 @@ import io
 app = Flask(__name__, static_folder="../build", static_url_path="/")
 CORS(app)
 
-GEMINI_API_KEY = "api key here"  
+GEMINI_API_KEY = "API KEY HERE"  
 genai.configure(api_key=GEMINI_API_KEY)
 
 @app.route('/')
