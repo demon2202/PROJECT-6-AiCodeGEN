@@ -13,7 +13,7 @@ import secrets
 app = Flask(__name__, static_folder="../build", static_url_path="/")
 CORS(app)
 
-GEMINI_API_KEY = "AIzaSyA1litpUAnHhjkV2wEUmsGb0yuXMkvelE4"  
+GEMINI_API_KEY = ""  
 genai.configure(api_key=GEMINI_API_KEY)
 
 # Secret key for JWT tokens
