@@ -1,572 +1,735 @@
+// 1. Fix the vsLight import - import 'vs' instead
 import React, { useState, useEffect, useRef } from 'react';
 import './App.css';
-import { Moon, Sun, Mic, MicOff, Copy, Play, Download, Trash2, Plus, Code, Save, Check, AlertCircle, X } from 'lucide-react';
-import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
-import { dracula, tomorrow } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { nanoid } from 'nanoid';
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
+import { vscDarkPlus, vs } from 'react-syntax-highlighter/dist/esm/styles/prism';
+import { 
+  Mic, MicOff, Sun, Moon, MessageSquare, Download, Copy, 
+  Trash2, Play, Zap, Plus, Upload, X, PanelLeft,
+  Settings, Code, Github, ChevronDown, RefreshCcw, Terminal
+} from 'lucide-react';
 
-function CodeGenerator() {
-  const [darkMode, setDarkMode] = useState(() => {
-    const savedMode = localStorage.getItem('darkMode');
-    return savedMode ? JSON.parse(savedMode) : window.matchMedia('(prefers-color-scheme: dark)').matches;
-  });
+function App() {
   const [instruction, setInstruction] = useState('');
-  const [status, setStatus] = useState('idle'); // idle, loading, success, error
-  const [isListening, setIsListening] = useState(false);
-  const [transcript, setTranscript] = useState('');
-  const [toast, setToast] = useState({ visible: false, message: '', type: '' });
-  const [activeTabId, setActiveTabId] = useState(null);
   const [tabs, setTabs] = useState([]);
-  const [keyboardShortcutsVisible, setKeyboardShortcutsVisible] = useState(false);
-  const [exportFormat, setExportFormat] = useState('py');
-  
-  const recognitionRef = useRef(null);
-  const timeoutRef = useRef(null);
-  const instructionInputRef = useRef(null);
+  const [activeTabId, setActiveTabId] = useState(null);
+  const [theme, setTheme] = useState('dark'); // dark, light, cyberpunk, minimal
+  const [isListening, setIsListening] = useState(false);
+  const [micError, setMicError] = useState('');
+  const [chatPopupTabId, setChatPopupTabId] = useState(null);
+  const [chatQuestion, setChatQuestion] = useState('');
+  const [chatLoading, setChatLoading] = useState(false);
+  const [toast, setToast] = useState({ visible: false, message: '', type: '' });
+  const [isThemeMenuOpen, setIsThemeMenuOpen] = useState(false);
+  const [isQuickActionsOpen, setIsQuickActionsOpen] = useState(false);
 
-  // Initialize a session on first load
+  const recognitionRef = useRef(null);
+  const tabsRef = useRef(null);
+
   useEffect(() => {
-    if (tabs.length === 0) {
-      const newTab = createNewTab();
-      setTabs([newTab]);
-      setActiveTabId(newTab.id);
+    const newTab = createNewTab('Main Session');
+    setTabs([newTab]);
+    setActiveTabId(newTab.id);
+    
+    const savedTheme = localStorage.getItem('codegenTheme');
+    if (savedTheme) {
+      setTheme(savedTheme);
+    } else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) {
+      setTheme('light');
     }
   }, []);
 
-  // Save dark mode to localStorage
   useEffect(() => {
-    localStorage.setItem('darkMode', JSON.stringify(darkMode));
-    if (darkMode) {
-      document.body.classList.add('dark-mode');
-    } else {
-      document.body.classList.remove('dark-mode');
-    }
-  }, [darkMode]);
+    document.body.className = `${theme}-mode`;
+    localStorage.setItem('codegenTheme', theme);
+    
+    // Theme transition animation
+    const overlay = document.createElement('div');
+    overlay.className = 'theme-transition-overlay active';
+    document.body.appendChild(overlay);
+    
+    setTimeout(() => {
+      overlay.classList.remove('active');
+      setTimeout(() => {
+        document.body.removeChild(overlay);
+      }, 500);
+    }, 50);
+  }, [theme]);
 
-  // Initialize speech recognition
   useEffect(() => {
     if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-      recognitionRef.current = new SpeechRecognition();
+      const recognition = new SpeechRecognition();
+      recognition.continuous = false;
+      recognition.interimResults = false;
+      recognition.lang = 'en-US';
 
-      recognitionRef.current.continuous = false;
-      recognitionRef.current.interimResults = false;
-      recognitionRef.current.lang = 'en-US';
-
-      recognitionRef.current.onstart = () => {
-        setIsListening(true);
-      };
-
-      recognitionRef.current.onresult = (event) => {
-        let finalTranscript = '';
-        for (let i = event.resultIndex; i < event.results.length; i++) {
-          finalTranscript += event.results[i][0].transcript + ' ';
-        }
-
-        if (finalTranscript.trim()) {
-          setTranscript(finalTranscript.trim());
-          setInstruction(finalTranscript.trim());
-        }
-      };
-
-      recognitionRef.current.onerror = (event) => {
-        console.error('Speech recognition error:', event.error);
+      recognition.onstart = () => setIsListening(true);
+      recognition.onend = () => setIsListening(false);
+      recognition.onerror = (event) => {
+        setMicError('Mic error: ' + event.error);
+        showToast(`Microphone error: ${event.error}`, 'error');
         setIsListening(false);
-        showToast('Speech recognition error', 'error');
       };
 
-      recognitionRef.current.onend = () => {
-        setIsListening(false);
-        clearTimeout(timeoutRef.current);
+      recognition.onresult = (event) => {
+        const transcript = Array.from(event.results)
+          .map((result) => result[0])
+          .map((result) => result.transcript)
+          .join('');
+        setInstruction(transcript);
       };
+
+      recognitionRef.current = recognition;
     }
+  }, []);
 
-    // Set up keyboard shortcuts
-    const handleKeyDown = (e) => {
-      // Cmd/Ctrl + Enter to generate code
-      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
-        e.preventDefault();
-        const form = document.getElementById('instruction-form');
-        if (form) form.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
+  // Scroll active tab into view
+  useEffect(() => {
+    if (activeTabId && tabsRef.current) {
+      const activeTabElement = tabsRef.current.querySelector(`.tab.active`);
+      if (activeTabElement) {
+        activeTabElement.scrollIntoView({
+          behavior: 'smooth',
+          block: 'nearest',
+          inline: 'center'
+        });
       }
-      
-      // Cmd/Ctrl + Shift + N to create new tab
-      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === 'N') {
-        e.preventDefault();
-        handleNewTab();
-      }
-      
-      // Cmd/Ctrl + R to run code
-      if ((e.metaKey || e.ctrlKey) && e.key === 'r') {
-        e.preventDefault();
-        const activeTab = tabs.find(tab => tab.id === activeTabId);
-        if (activeTab && activeTab.code) {
-          runCode(activeTab.code);
-        }
-      }
-      
-      // Escape to close modal
-      if (e.key === 'Escape') {
-        setKeyboardShortcutsVisible(false);
-      }
-    };
-    
-    window.addEventListener('keydown', handleKeyDown);
-    
-    return () => {
-      window.removeEventListener('keydown', handleKeyDown);
-      if (recognitionRef.current) {
-        recognitionRef.current.stop();
-      }
-      clearTimeout(timeoutRef.current);
-    };
-  }, [tabs, activeTabId]);
+    }
+  }, [activeTabId]);
 
-  // Create new tab helper
-  const createNewTab = () => {
-    return {
-      id: nanoid(),
-      title: `Session ${tabs.length + 1}`,
-      code: '',
-      history: []
-    };
+  const createNewTab = (title = 'New Tab') => ({
+    id: nanoid(),
+    title,
+    code: '',
+    chats: [],
+    createdAt: new Date()
+  });
+
+  const updateTab = (tabId, updates) => {
+    setTabs((tabs) =>
+      tabs.map((tab) =>
+        tab.id === tabId ? { ...tab, ...updates } : tab
+      )
+    );
   };
 
-  const handleNewTab = () => {
-    const newTab = createNewTab();
-    setTabs([...tabs, newTab]);
-    setActiveTabId(newTab.id);
-    setInstruction('');
-    setTranscript('');
+  const handleGenerateCode = async () => {
+    if (!instruction.trim()) {
+      showToast('Please enter an instruction first', 'error');
+      return;
+    }
     
-    // Focus instruction input after creating a new tab
-    setTimeout(() => {
-      if (instructionInputRef.current) {
-        instructionInputRef.current.focus();
+    try {
+      showToast('Generating code...', 'info');
+      
+      const res = await fetch('/api/generate-code', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          instruction,
+          previousCode: tabs.find(t => t.id === activeTabId)?.code || '',
+          context: tabs.find(t => t.id === activeTabId)?.history || []
+        }),
+      });
+      
+      const data = await res.json();
+      
+      if (res.ok) {
+        updateTab(activeTabId, { 
+          code: data.code,
+          history: [
+            ...(tabs.find(t => t.id === activeTabId)?.history || []),
+            { instruction, code: data.code, timestamp: new Date() }
+          ]
+        });
+        showToast('✨ Code generated successfully', 'success');
+        setInstruction('');
+      } else {
+        throw new Error(data.error || 'Failed to generate code');
       }
-    }, 0);
+    } catch (error) {
+      showToast(`❌ ${error.message}`, 'error');
+    }
   };
 
-  const toggleDarkMode = () => setDarkMode(!darkMode);
+  const handleRunCode = async () => {
+    const tab = tabs.find((t) => t.id === activeTabId);
+    if (!tab?.code) {
+      showToast('No code to run', 'error');
+      return;
+    }
+    
+    try {
+      showToast('Running code...', 'info');
+      
+      const res = await fetch('/api/run-code', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code: tab.code }),
+      });
+      
+      const data = await res.json();
+      
+      if (res.ok) {
+        // Create a modal to display the result
+        const modal = document.createElement('div');
+        modal.className = 'code-result-modal';
+        
+        const modalContent = document.createElement('div');
+        modalContent.className = 'code-result-content';
+        
+        const closeBtn = document.createElement('button');
+        closeBtn.innerHTML = '&times;';
+        closeBtn.className = 'code-result-close';
+        closeBtn.onclick = () => document.body.removeChild(modal);
+        
+        const title = document.createElement('h3');
+        title.innerText = 'Code Execution Result';
+        
+        const result = document.createElement('pre');
+        result.className = 'code-result-output';
+        result.innerText = data.result;
+        
+        modalContent.appendChild(closeBtn);
+        modalContent.appendChild(title);
+        modalContent.appendChild(result);
+        modal.appendChild(modalContent);
+        document.body.appendChild(modal);
+        
+        // Add animation
+        setTimeout(() => {
+          modal.classList.add('show');
+        }, 10);
+      } else {
+        throw new Error(data.error || 'Failed to run code');
+      }
+    } catch (error) {
+      showToast(`❌ ${error.message}`, 'error');
+    }
+  };
 
-  const toggleListening = () => {
+  const handleChatAsk = async () => {
+    if (!chatQuestion.trim()) {
+      showToast('Please enter a question', 'error');
+      return;
+    }
+    
+    setChatLoading(true);
+    const tab = tabs.find((t) => t.id === chatPopupTabId);
+    
+    try {
+      const res = await fetch('/api/chat-about-code', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code: tab.code, question: chatQuestion }),
+      });
+      
+      const data = await res.json();
+      
+      if (res.ok) {
+        const updatedChats = [...(tab.chats || []), {
+          question: chatQuestion,
+          answer: data.answer,
+          timestamp: new Date()
+        }];
+        
+        updateTab(chatPopupTabId, { chats: updatedChats });
+        setChatQuestion('');
+        
+        // Scroll to bottom of chat after a brief delay
+        setTimeout(() => {
+          const chatBody = document.querySelector('.chat-popup-body');
+          if (chatBody) {
+            chatBody.scrollTop = chatBody.scrollHeight;
+          }
+        }, 100);
+      } else {
+        throw new Error(data.error || 'Failed to get an answer');
+      }
+    } catch (error) {
+      showToast(`❌ ${error.message}`, 'error');
+    } finally {
+      setChatLoading(false);
+    }
+  };
+
+  const handleImportCode = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const content = event.target.result;
+      updateTab(activeTabId, { code: content });
+      showToast('📥 Code imported successfully', 'success');
+    };
+    reader.readAsText(file);
+    
+    // Reset the input value so the same file can be uploaded again
+    e.target.value = '';
+  };
+
+  const handlePluginAction = async (pluginName) => {
+    const tab = tabs.find((t) => t.id === activeTabId);
+    if (!tab?.code) {
+      showToast('No code to process', 'error');
+      return;
+    }
+    
+    try {
+      showToast(`Running ${pluginName}...`, 'info');
+      
+      const res = await fetch(`/api/plugin/${pluginName}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code: tab.code }),
+      });
+      
+      const data = await res.json();
+      
+      if (res.ok) {
+        updateTab(activeTabId, { code: data.result });
+        showToast(`✅ Code ${pluginName} complete`, 'success');
+      } else {
+        throw new Error(data.error || `Failed to ${pluginName} code`);
+      }
+    } catch (error) {
+      showToast(`❌ ${error.message}`, 'error');
+    }
+  };
+  
+  const startMic = () => {
     if (!recognitionRef.current) {
-      showToast('Speech recognition is not supported in your browser', 'error');
+      showToast('Speech recognition not supported in your browser', 'error');
       return;
     }
 
-    if (isListening) {
+    try {
+      setMicError('');
+      recognitionRef.current.start();
+    } catch (error) {
+      setMicError('Mic already running or unavailable');
+      showToast('Microphone already running or unavailable', 'error');
+    }
+  };
+
+  const stopMic = () => {
+    if (recognitionRef.current) {
       recognitionRef.current.stop();
-    } else {
-      setTranscript('');
-      try {
-        navigator.mediaDevices.getUserMedia({ audio: true }).then(() => {
-          recognitionRef.current.start();
-          timeoutRef.current = setTimeout(() => {
-            recognitionRef.current.stop();
-          }, 6000);
-        }).catch((err) => {
-          showToast('Microphone access denied or not available', 'error');
-          console.error('getUserMedia error:', err);
-        });
-      } catch (error) {
-        console.error('Failed to start recognition:', error);
-      }
-    }
-  };
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    if (!instruction.trim() || status === 'loading') return;
-
-    setStatus('loading');
-    const activeTab = tabs.find(tab => tab.id === activeTabId);
-    
-    try {
-      const response = await fetch('/api/generate-code', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ instruction, previousCode: activeTab?.code || '' })
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to generate code');
-      }
-
-      // Update the tab's code and history
-      const updatedTabs = tabs.map(tab => {
-        if (tab.id === activeTabId) {
-          // Update tab title based on the instruction if it's the first instruction
-          let newTitle = tab.title;
-          if (tab.history.length === 0) {
-            newTitle = instruction.length > 30 
-              ? instruction.substring(0, 30) + '...' 
-              : instruction;
-          }
-          
-          return {
-            ...tab,
-            code: data.code,
-            title: newTitle,
-            history: [...tab.history, { instruction, code: data.code, timestamp: new Date() }]
-          };
-        }
-        return tab;
-      });
-      
-      setTabs(updatedTabs);
-      setInstruction('');
-      setTranscript('');
-      setStatus('success');
-      showToast('Code generated successfully', 'success');
-      
-      // After 2 seconds, revert to idle state
-      setTimeout(() => setStatus('idle'), 2000);
-    } catch (error) {
-      console.error('Error generating code:', error);
-      showToast(error.message, 'error');
-      setStatus('error');
-      
-      // After 2 seconds, revert to idle state
-      setTimeout(() => setStatus('idle'), 2000);
-    }
-  };
-
-  const copyToClipboard = (code) => {
-    navigator.clipboard.writeText(code);
-    showToast('Code copied to clipboard', 'success');
-  };
-
-  const downloadCode = (code, format = exportFormat) => {
-    const file = new Blob([code], { type: 'text/plain' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(file);
-    a.download = `generated_code.${format}`;
-    a.click();
-    showToast(`Code downloaded as ${a.download}`, 'success');
-  };
-
-  const clearCode = () => {
-    const updatedTabs = tabs.map(tab => {
-      if (tab.id === activeTabId) {
-        return { ...tab, code: '' };
-      }
-      return tab;
-    });
-    setTabs(updatedTabs);
-    showToast('Code cleared', 'info');
-  };
-
-  const runCode = async (code) => {
-    if (!code) return;
-    
-    try {
-      setStatus('loading');
-      const response = await fetch('/api/run-code', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code })
-      });
-  
-      const contentType = response.headers.get('content-type');
-      if (!contentType || !contentType.includes('application/json')) {
-        const text = await response.text();
-        console.error('Non-JSON response:', text);
-        showToast('Server error: Expected JSON but received something else', 'error');
-        setStatus('error');
-        return;
-      }
-  
-      const data = await response.json();
-  
-      if (!response.ok) {
-        throw new Error(data.error || 'Code execution failed');
-      }
-  
-      setStatus('success');
-      showToast('Code executed successfully', 'success');
-      
-      // Show modal with output
-      const outputModal = document.getElementById('output-modal');
-      const outputContent = document.getElementById('output-content');
-      if (outputModal && outputContent) {
-        outputContent.textContent = data.result;
-        outputModal.classList.add('show-modal');
-      } else {
-        alert(`✅ Code Output:\n${data.result}`);
-      }
-    } catch (error) {
-      console.error('Error running code:', error);
-      showToast('Failed to run the code', 'error');
-      setStatus('error');
-    } finally {
-      // After 2 seconds, revert to idle state
-      setTimeout(() => setStatus('idle'), 2000);
-    }
-  };
-
-  const closeModal = (id) => {
-    const modal = document.getElementById(id);
-    if (modal) {
-      modal.classList.remove('show-modal');
     }
   };
 
   const showToast = (message, type = 'info') => {
     setToast({ visible: true, message, type });
-    setTimeout(() => setToast({ visible: false, message: '', type: '' }), 3000);
+    setTimeout(() => {
+      setToast({ visible: false, message: '', type: '' });
+    }, 3000);
   };
 
+  // 2. Fix the ESLint error - use window.confirm instead of confirm
   const removeTab = (tabId) => {
-    // Don't remove if it's the only tab
-    if (tabs.length === 1) {
-      return;
-    }
-    
     const newTabs = tabs.filter(tab => tab.id !== tabId);
-    setTabs(newTabs);
     
-    // If we're removing the active tab, activate the first tab
-    if (tabId === activeTabId) {
+    if (newTabs.length === 0) {
+      // If there are no tabs left, create a new one
+      const newTab = createNewTab('New Session');
+      setTabs([newTab]);
+      setActiveTabId(newTab.id);
+    } else if (activeTabId === tabId) {
+      // If the active tab is being removed, activate the next available tab
       setActiveTabId(newTabs[0].id);
+      setTabs(newTabs);
+    } else {
+      // Otherwise just remove the tab
+      setTabs(newTabs);
     }
   };
 
-  const renameTab = (tabId, newTitle) => {
-    if (!newTitle) return;
-    
-    const updatedTabs = tabs.map(tab => {
-      if (tab.id === tabId) {
-        return { ...tab, title: newTitle };
-      }
-      return tab;
-    });
-    
-    setTabs(updatedTabs);
-  };
-
-  const handleHistoryItemClick = (historyItem) => {
-    // Update the code with the selected history item
-    const updatedTabs = tabs.map(tab => {
-      if (tab.id === activeTabId) {
-        return { ...tab, code: historyItem.code };
-      }
-      return tab;
-    });
-    
-    setTabs(updatedTabs);
-  };
-
-  const activeTab = tabs.find(tab => tab.id === activeTabId) || {};
+  // Get the currently active tab
+  const activeTab = tabs.find((t) => t.id === activeTabId) || { code: '' };
 
   return (
-    <div className="code-generator-container">
-      <header>
-        <div className="logo-container">
-          <Code size={24} />
-          <h1>AI CodeGen</h1>
-        </div>
+    <div className="app-container">
+      <header className="app-header">
+        <h1>
+          <Code className="app-logo" size={28} />
+          AI CodeGen Studio
+        </h1>
         <div className="header-actions">
-          <button className="header-button" onClick={() => setKeyboardShortcutsVisible(true)}>
-            Shortcuts
-          </button>
-          <button className="theme-toggle" onClick={toggleDarkMode}>
-            {darkMode ? <Sun size={20} /> : <Moon size={20} />}
-          </button>
+          <label className="upload-btn">
+            <Upload size={16} />
+            <input type="file" accept=".py,.js,.html,.css,.txt" onChange={handleImportCode} hidden />
+            Import
+          </label>
+          
+          <div className="theme-selector">
+            <button 
+              onClick={() => setIsThemeMenuOpen(!isThemeMenuOpen)} 
+              className="theme-toggle"
+            >
+              {theme === 'dark' && <Moon size={18} />}
+              {theme === 'light' && <Sun size={18} />}
+              {theme === 'cyberpunk' && <Zap size={18} />}
+              {theme === 'minimal' && <Settings size={18} />}
+            </button>
+            
+            {isThemeMenuOpen && (
+              <div className="theme-menu">
+                <div 
+                  className="theme-option" 
+                  onClick={() => {
+                    setTheme('dark');
+                    setIsThemeMenuOpen(false);
+                  }}
+                >
+                  <div className="theme-preview" style={{background: '#1f2937'}}></div>
+                  Dark Mode
+                </div>
+                <div 
+                  className="theme-option" 
+                  onClick={() => {
+                    setTheme('light');
+                    setIsThemeMenuOpen(false);
+                  }}
+                >
+                  <div className="theme-preview" style={{background: '#ffffff'}}></div>
+                  Light Mode
+                </div>
+                <div 
+                  className="theme-option" 
+                  onClick={() => {
+                    setTheme('cyberpunk');
+                    setIsThemeMenuOpen(false);
+                  }}
+                >
+                  <div className="theme-preview" style={{background: '#190544'}}></div>
+                  Cyberpunk
+                </div>
+                <div 
+                  className="theme-option" 
+                  onClick={() => {
+                    setTheme('minimal');
+                    setIsThemeMenuOpen(false);
+                  }}
+                >
+                  <div className="theme-preview" style={{background: '#f8f8f8'}}></div>
+                  Minimal
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </header>
 
-      <div className="tabs-container">
-        <div className="tabs">
-          {tabs.map(tab => (
-            <div 
-              key={tab.id}
-              className={`tab ${activeTabId === tab.id ? 'active' : ''}`}
-              onClick={() => setActiveTabId(tab.id)}
-            >
-              <span className="tab-title" 
-                onDoubleClick={(e) => {
-                  const newTitle = prompt('Rename this tab:', tab.title);
-                  if (newTitle) renameTab(tab.id, newTitle);
-                }}
-              >
-                {tab.title || `Session ${tabs.indexOf(tab) + 1}`}
-              </span>
-              {tabs.length > 1 && (
-                <button className="close-tab" onClick={(e) => {
+      <div className="tabs" ref={tabsRef}>
+        {tabs.map((tab) => (
+          <div
+            key={tab.id}
+            className={`tab ${tab.id === activeTabId ? 'active' : ''}`}
+            onClick={() => setActiveTabId(tab.id)}
+          >
+            {tab.title}
+            {tabs.length > 1 && (
+              <button 
+                className="tab-close" 
+                onClick={(e) => {
                   e.stopPropagation();
                   removeTab(tab.id);
-                }}>
-                  <X size={14} />
-                </button>
-              )}
-            </div>
-          ))}
-          <button className="new-tab" onClick={handleNewTab}>
-            <Plus size={16} />
+                }}
+              >
+                <X size={12} />
+              </button>
+            )}
+          </div>
+        ))}
+        <button 
+          className="tab-add"
+          onClick={() => {
+            const newTab = createNewTab(`Session ${tabs.length + 1}`);
+            setTabs([...tabs, newTab]);
+            setActiveTabId(newTab.id);
+          }}
+        >
+          <Plus size={16} />
+        </button>
+      </div>
+
+      <div className="input-section">
+        <textarea
+          placeholder="Describe what code you want or how to modify existing code..."
+          value={instruction}
+          onChange={(e) => setInstruction(e.target.value)}
+          onKeyDown={(e) => {
+            // Submit on Ctrl+Enter or Cmd+Enter
+            if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+              e.preventDefault();
+              handleGenerateCode();
+            }
+          }}
+        />
+
+        <div className="input-actions">
+          <button 
+            className={`mic-btn ${isListening ? 'listening' : ''}`} 
+            onClick={isListening ? stopMic : startMic}
+          >
+            {isListening ? <MicOff size={18} /> : <Mic size={18} />}
+            {isListening ? 'Stop' : 'Voice'}
+          </button>
+          <button onClick={handleGenerateCode} className="generate-btn">
+            <Zap size={18} /> Generate Code
           </button>
         </div>
       </div>
 
-      <main>
-        <section className="input-section">
-          <form id="instruction-form" onSubmit={handleSubmit}>
-            <div className="input-container">
-              <input
-                ref={instructionInputRef}
-                type="text"
-                value={instruction}
-                onChange={(e) => setInstruction(e.target.value)}
-                placeholder="Type or speak your instruction... (Ctrl+Enter to submit)"
-                disabled={status === 'loading'}
-              />
-              <button
-                type="button"
-                className={`mic-button ${isListening ? 'listening' : ''}`}
-                onClick={toggleListening}
-                disabled={status === 'loading'}
-                title="Record voice instruction"
-              >
-                {isListening ? <MicOff size={18} /> : <Mic size={18} />}
-              </button>
-              <button
-                type="submit"
-                className={`submit-button ${status === 'loading' ? 'loading' : status === 'success' ? 'success' : status === 'error' ? 'error' : ''}`}
-                disabled={status === 'loading' || !instruction.trim()}
-              >
-                {status === 'loading' ? 'Processing...' : status === 'success' ? <Check size={18} /> : status === 'error' ? <AlertCircle size={18} /> : 'Generate Code'}
-              </button>
-            </div>
+      <div className="code-actions">
+        <button onClick={() => {
+          navigator.clipboard.writeText(activeTab.code);
+          showToast('Code copied to clipboard', 'success');
+        }}>
+          <Copy size={16} /> Copy
+        </button>
+        <button onClick={() => {
+          const blob = new Blob([activeTab.code], { type: 'text/plain' });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = 'code.py';
+          a.click();
+          URL.revokeObjectURL(url);
+        }}>
+          <Download size={16} /> Download
+        </button>
+        <button onClick={handleRunCode}>
+          <Play size={16} /> Run
+        </button>
+        <button onClick={() => setChatPopupTabId(activeTabId)}>
+          <MessageSquare size={16} /> Chat
+        </button>
+        <button onClick={() => {
+          // 2. Fix the ESLint error - use window.confirm instead of confirm
+          if (window.confirm('Are you sure you want to clear the code?')) {
+            updateTab(activeTabId, { code: '' });
+            showToast('Code cleared', 'success');
+          }
+        }}>
+          <Trash2 size={16} /> Clear
+        </button>
+        <button onClick={() => handlePluginAction('optimize')}>
+          <RefreshCcw size={16} /> Optimize
+        </button>
+        <button onClick={() => handlePluginAction('debug')}>
+          <Terminal size={16} /> Debug
+        </button>
+        <button onClick={() => handlePluginAction('convert-to-oop')}>
+          <PanelLeft size={16} /> OOP
+        </button>
+      </div>
 
-            {transcript && (
-              <div className="voice-feedback">
-                <p><strong>Transcript:</strong> {transcript}</p>
+      <div className="code-box">
+        <div className="editor-header">
+          <span className="editor-title">{activeTab?.title || 'Code Editor'}</span>
+          <div className="editor-actions">
+            <span className="editor-language">Python</span>
+          </div>
+        </div>
+        <SyntaxHighlighter
+          language="python"
+          style={theme === 'light' || theme === 'minimal' ? vs : vscDarkPlus}
+          showLineNumbers
+          wrapLines={true}
+        >
+          {activeTab?.code || '# Generated code will appear here...\n# 1. Enter a description in the text area above\n# 2. Click "Generate Code" to create your code\n# 3. Run, optimize, or chat about your code using the buttons'}
+        </SyntaxHighlighter>
+      </div>
+
+      {chatPopupTabId && (
+        <div className="chat-popup">
+          <div className="chat-popup-header">
+            <h3>
+              <MessageSquare size={16} />
+              Code Assistant
+            </h3>
+            <button className="chat-close-btn" onClick={() => setChatPopupTabId(null)}>
+              <X size={18} />
+            </button>
+          </div>
+          <div className="chat-popup-body">
+            {(tabs.find((t) => t.id === chatPopupTabId)?.chats || []).length === 0 && (
+              <div className="chat-welcome">
+                <MessageSquare size={32} />
+                <h4>Code Assistant</h4>
+                <p>Ask questions about your code and get explanations, suggestions for improvements, or debugging help.</p>
               </div>
             )}
-          </form>
-
-          <div className="history-section">
-            <h3>Instruction History</h3>
-            <div className="history-list">
-              {activeTab.history?.length === 0 ? (
-                <p className="no-history">No instructions yet.</p>
-              ) : (
-                activeTab.history?.map((item, i) => (
-                  <div key={i} className="history-item" onClick={() => handleHistoryItemClick(item)}>
-                    <div className="history-instruction">{item.instruction}</div>
-                    <div className="history-timestamp">{new Date(item.timestamp).toLocaleTimeString()}</div>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-        </section>
-
-        <section className="code-section">
-          <div className="code-header">
-            <h3>Generated Code</h3>
-            <div className="code-actions">
-              <div className="export-format">
-                <select 
-                  value={exportFormat} 
-                  onChange={(e) => setExportFormat(e.target.value)}
-                  className="format-select"
-                >
-                  <option value="py">Python (.py)</option>
-                  <option value="txt">Text (.txt)</option>
-                  <option value="ipynb">Jupyter Notebook (.ipynb)</option>
-                </select>
+            {(tabs.find((t) => t.id === chatPopupTabId)?.chats || []).map((chat, i) => (
+              <div key={i} className="chat-bubble">
+                <div className="chat-q">
+                  <span className="chat-icon">🧑</span>
+                  {chat.question}
+                </div>
+                <div className="chat-a">
+                  <span className="chat-icon">🤖</span>
+                  {chat.answer}
+                </div>
               </div>
-              <button className="action-button" onClick={() => copyToClipboard(activeTab.code)} disabled={!activeTab.code}>
-                <Copy size={16} /> Copy
-              </button>
-              <button className="action-button" onClick={() => downloadCode(activeTab.code)} disabled={!activeTab.code}>
-                <Download size={16} /> Download
-              </button>
-              <button className="action-button" onClick={() => runCode(activeTab.code)} disabled={!activeTab.code || status === 'loading'}>
-                <Play size={16} /> Run
-              </button>
-              <button className="action-button danger" onClick={clearCode} disabled={!activeTab.code}>
-                <Trash2 size={16} /> Clear
-              </button>
-            </div>
+            ))}
+            {chatLoading && (
+              <div className="typing-indicator">
+                <div className="typing-bubble"></div>
+                <div className="typing-bubble"></div>
+                <div className="typing-bubble"></div>
+              </div>
+            )}
           </div>
-          <div className="code-editor-container">
-            <SyntaxHighlighter
-              language="python"
-              style={darkMode ? dracula : tomorrow}
-              className="code-editor"
-              wrapLines={true}
-              showLineNumbers={true}
-            >
-              {activeTab.code || '# Your Python code will appear here'}
-            </SyntaxHighlighter>
+          <div className="chat-popup-footer">
+            <input
+              value={chatQuestion}
+              onChange={(e) => setChatQuestion(e.target.value)}
+              placeholder="Ask about this code..."
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  handleChatAsk();
+                }
+              }}
+            />
+            <button onClick={handleChatAsk}>
+              <ChevronDown size={18} />
+            </button>
           </div>
-        </section>
-      </main>
+        </div>
+      )}
 
-      <footer>
-        <p>© {new Date().getFullYear()} AI CodeGen | Keyboard shortcuts: Ctrl+Enter to generate, Ctrl+Shift+N for new tab, Ctrl+R to run code</p>
-      </footer>
+      {toast.visible && (
+        <div className={`toast ${toast.type}`}>
+          {toast.type === 'success' && '✅ '}
+          {toast.type === 'error' && '❌ '}
+          {toast.type === 'info' && 'ℹ️ '}
+          {toast.message}
+        </div>
+      )}
 
-      {/* Output Modal */}
-      <div id="output-modal" className="modal">
-        <div className="modal-content">
-          <div className="modal-header">
-            <h3>Code Output</h3>
-            <button className="close-modal" onClick={() => closeModal('output-modal')}>×</button>
-          </div>
-          <div className="modal-body">
-            <pre id="output-content" className="output-content"></pre>
-          </div>
+      <div className="floating-btn" onClick={() => setIsQuickActionsOpen(!isQuickActionsOpen)}>
+        <Zap size={24} />
+      </div>
+
+      <div className={`quick-actions ${isQuickActionsOpen ? 'active' : ''}`}>
+        <div className="quick-action-btn tooltip" data-tooltip="GitHub" onClick={() => window.open('https://github.com', '_blank')}>
+          <Github size={20} />
+        </div>
+        <div className="quick-action-btn tooltip" data-tooltip="New Tab" onClick={() => {
+          const newTab = createNewTab(`Session ${tabs.length + 1}`);
+          setTabs([...tabs, newTab]);
+          setActiveTabId(newTab.id);
+          setIsQuickActionsOpen(false);
+        }}>
+          <Plus size={20} />
+        </div>
+        <div className="quick-action-btn tooltip" data-tooltip="Chat" onClick={() => {
+          setChatPopupTabId(activeTabId);
+          setIsQuickActionsOpen(false);
+        }}>
+          <MessageSquare size={20} />
         </div>
       </div>
 
-      {/* Keyboard Shortcuts Modal */}
-      <div id="keyboard-shortcuts-modal" className={`modal ${keyboardShortcutsVisible ? 'show-modal' : ''}`}>
-        <div className="modal-content">
-          <div className="modal-header">
-            <h3>Keyboard Shortcuts</h3>
-            <button className="close-modal" onClick={() => setKeyboardShortcutsVisible(false)}>×</button>
-          </div>
-          <div className="modal-body">
-            <table className="shortcuts-table">
-              <tbody>
-                <tr>
-                  <td><kbd>Ctrl</kbd> + <kbd>Enter</kbd></td>
-                  <td>Generate code</td>
-                </tr>
-                <tr>
-                  <td><kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>N</kbd></td>
-                  <td>New tab</td>
-                </tr>
-                <tr>
-                  <td><kbd>Ctrl</kbd> + <kbd>R</kbd></td>
-                  <td>Run code</td>
-                </tr>
-                <tr>
-                  <td><kbd>Esc</kbd></td>
-                  <td>Close modal</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-
-      {/* Toast Notification */}
-      <div className={`toast ${toast.visible ? 'show-toast' : ''} ${toast.type}`}>
-        <div className="toast-content">
-          {toast.type === 'success' && <Check size={18} />}
-          {toast.type === 'error' && <AlertCircle size={18} />}
-          {toast.type === 'info' && <AlertCircle size={18} />}
-          <span>{toast.message}</span>
-        </div>
-      </div>
+      {/* Code result modal - will be added dynamically */}
+      <style jsx>{`
+        .code-result-modal {
+          position: fixed;
+          top: 0;
+          left: 0;
+          width: 100%;
+          height: 100%;
+          background: rgba(0,0,0,0.7);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          z-index: 1000;
+          opacity: 0;
+          transition: opacity 0.3s ease;
+        }
+        
+        .code-result-modal.show {
+          opacity: 1;
+        }
+        
+        .code-result-content {
+          background: var(--bg-component);
+          border-radius: var(--radius);
+          width: 80%;
+          max-width: 800px;
+          max-height: 80vh;
+          padding: 20px;
+          position: relative;
+          box-shadow: var(--shadow);
+          overflow: auto;
+          transform: translateY(20px);
+          transition: transform 0.3s ease;
+        }
+        
+        .code-result-modal.show .code-result-content {
+          transform: translateY(0);
+        }
+        
+        .code-result-close {
+          position: absolute;
+          right: 15px;
+          top: 15px;
+          background: rgba(255,255,255,0.1);
+          border: none;
+          width: 30px;
+          height: 30px;
+          border-radius: 50%;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 20px;
+          color: var(--text-primary);
+          cursor: pointer;
+          transition: background 0.2s;
+        }
+        
+        .code-result-close:hover {
+          background: rgba(255,255,255,0.2);
+        }
+        
+        .code-result-output {
+          background: var(--bg-main);
+          padding: 15px;
+          border-radius: 8px;
+          margin-top: 15px;
+          overflow: auto;
+          max-height: 60vh;
+          white-space: pre-wrap;
+          font-family: monospace;
+        }
+        
+        .chat-welcome {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          text-align: center;
+          height: 100%;
+          gap: 10px;
+          color: var(--text-secondary);
+          padding: 20px;
+        }
+        
+        .chat-icon {
+          display: inline-block;
+          width: 24px;
+          height: 24px;
+          margin-right: 8px;
+          text-align: center;
+        }
+      `}</style>
     </div>
   );
 }
 
-export default CodeGenerator;
+export default App;
