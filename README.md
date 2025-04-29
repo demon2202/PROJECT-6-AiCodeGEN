@@ -1,17 +1,49 @@
 # Python Code Generator
-# IMAGES
-## MAIN
 
-<img src="[./images/editor-screenshot.png](https://github.com/user-attachments/assets/b7b81d2d-3b5b-4124-8595-21785abadf25)" alt="Editor" width="700" />
-
-## CODE ASSISTANT
-![image](https://github.com/user-attachments/assets/025ed557-9f77-4fdc-8df7-bb44599e25e7)
 ## THEMES
+# DARK
+![image](https://github.com/user-attachments/assets/793c3e41-241c-44f4-82c0-7ca3de72f636)
 # LIGHT
 ![image](https://github.com/user-attachments/assets/2799d022-691b-4c5a-88c3-440eac5e8319)
 # CYBERPUNK
 ![image](https://github.com/user-attachments/assets/fd924624-dae3-47de-be62-3c0cd741ee52)
 
+## CODE ASSISTANT
+![image](https://github.com/user-attachments/assets/025ed557-9f77-4fdc-8df7-bb44599e25e7)
+
+## AI CodeGen Studio – System Flow Diagram
+         +---------------------+
+         |  User Interface     |  <== React (App.js + App.css)
+         |---------------------|
+         | - Tabs              |
+         | - Theme switcher    |
+         | - Voice input 🎙️    |
+         | - Editor (Python)   |
+         | - Chat popup 💬      |
+         +----------+----------+
+                    |
+                    ▼
+         [Frontend sends HTTP requests via fetch()]
+                    |
+                    ▼
+         +----------------------+
+         |   Flask Backend (API)|
+         |----------------------|
+         |  /api/generate-code  |
+         |  /api/run-code       |
+         |  /api/chat-about-code |
+         |  /api/plugin/...     |
+         |  /api/history        |
+         +----------+-----------+
+                    |
+                    ▼
+         +-----------------------+
+         |  Google Gemini API 🧠 |
+         |-----------------------|
+         |  Text-to-code, Chat   |
+         +-----------------------+
+
+--
 ## Table of Contents
 1. [Project Overview](#project-overview)
 2. [Features](#features)
@@ -37,12 +69,144 @@ This project is a web-based application that allows users to generate Python cod
 **Example**: A user can type "create a function to find prime numbers up to 100" and receive working Python code that accomplishes this task, along with an explanation of how the code works.
 
 ## Features
+# 🧠 1. Code Generation (`handleGenerateCode`)
+This function lets users **generate Python code from natural language instructions**.
 
-- **Natural Language to Code Conversion**: Transform plain English commands into functional Python code
-- **Code Explanations**: Receive explanations for each generated code snippet
-- **Command History**: Access your previously generated code snippets
-- **User-Friendly Interface**: Simple, intuitive design for users of all technical levels
-- **Real-time Response**: Quick generation of code snippets
+### How it works:
+- Gets the `instruction` from the input box (or voice).
+- Sends it to the backend (`/api/generate-code`) along with:
+  - Previously generated code (if any).
+  - The history of instructions/code in that tab.
+- The backend uses **Gemini API** to return updated Python code.
+- That code is saved in the tab and displayed in the editor.
+
+```js
+const res = await fetch('/api/generate-code', {
+  method: 'POST',
+  body: JSON.stringify({ instruction, previousCode, context }),
+});
+```
+
+---
+
+# ▶️ 2. Code Execution (`handleRunCode`)
+This runs the Python code using Python's `exec()` (server-side).
+
+### How it works:
+- Sends current code to `/api/run-code`.
+- Flask captures and returns the printed output or error.
+- A modal shows the result in a pop-up window.
+
+```js
+const res = await fetch('/api/run-code', {
+  method: 'POST',
+  body: JSON.stringify({ code }),
+});
+```
+
+---
+
+# 💬 3. Chat About Code (`handleChatAsk`)
+This enables users to **ask questions about the code**, like:
+- “What does this do?”
+- “Can you improve this?”
+- “Are there any bugs?”
+
+### How it works:
+- Sends code and question to `/api/chat-about-code`.
+- The backend uses Gemini to analyze and respond with:
+  - Bullet points
+  - Code snippets
+  - Clear explanations
+
+### Example call:
+```js
+const res = await fetch('/api/chat-about-code', {
+  method: 'POST',
+  body: JSON.stringify({ code, question }),
+});
+```
+
+---
+
+# 🛠️ 4. Plugins (Optimize / Debug / Convert to OOP)
+
+These buttons let the user run **AI-powered transformations** on their code.
+
+| Plugin | What It Does |
+|--------|--------------|
+| `optimize` | Makes the code faster / cleaner |
+| `debug` | Finds and fixes bugs |
+| `convert-to-oop` | Converts procedural code to class-based OOP |
+
+### Backend routes:
+```python
+@app.route('/api/plugin/<plugin_name>', methods=["POST"])
+```
+
+Frontend:
+```js
+fetch(`/api/plugin/${pluginName}`, {
+  method: 'POST',
+  body: JSON.stringify({ code }),
+});
+```
+
+---
+
+# 📑 5. Tabs System
+
+- You can create multiple tabs (`createNewTab`) to separate code sessions.
+- Each tab keeps:
+  - Code
+  - Chat history
+  - Instruction history
+- You can switch, rename, or remove tabs.
+
+```js
+const createNewTab = (title) => ({
+  id: nanoid(),
+  title,
+  code: '',
+  chats: [],
+});
+```
+
+---
+
+# 🎙️ 6. Voice-to-Code
+
+Speech recognition lets users **speak instructions**.
+
+- Uses the browser's `SpeechRecognition` API.
+- Converts spoken text to instructions.
+- Automatically fills the input box.
+
+```js
+recognition.onresult = (event) => {
+  const transcript = event.results[0][0].transcript;
+  setInstruction(transcript);
+};
+```
+
+---
+
+# 📋 7. Copy, Download, Clear, and Import
+
+- **Copy:** Copies code to clipboard.
+- **Download:** Saves code as `.py` file.
+- **Clear:** Wipes out code in a tab.
+- **Import:** Uploads and loads existing `.py` or `.txt` code files.
+
+---
+
+# ✅ 8. Toasts & Chat UI
+
+- Toasts appear for feedback: success, error, info.
+- Chat popup opens for each tab when you hit the 💬 button.
+- Shows chat bubbles (🧑 you ask, 🤖 AI answers).
+
+---
 
 ## Technical Architecture
 
