@@ -1,4 +1,8 @@
 # Python Code Generator
+# IMAGES
+![image](https://github.com/user-attachments/assets/b7b81d2d-3b5b-4124-8595-21785abadf25)
+![image](https://github.com/user-attachments/assets/4b339fea-82ec-495b-90a3-c51ee231a0d2)
+![image](https://github.com/user-attachments/assets/37056703-4fc8-4d7f-8636-50b66292bded)
 
 ## Table of Contents
 1. [Project Overview](#project-overview)
