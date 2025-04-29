@@ -1,8 +1,14 @@
 # Python Code Generator
 # IMAGES
+## MAIN
 ![image](https://github.com/user-attachments/assets/b7b81d2d-3b5b-4124-8595-21785abadf25)
-![image](https://github.com/user-attachments/assets/4b339fea-82ec-495b-90a3-c51ee231a0d2)
-![image](https://github.com/user-attachments/assets/37056703-4fc8-4d7f-8636-50b66292bded)
+## CODE ASSISTANT
+![image](https://github.com/user-attachments/assets/025ed557-9f77-4fdc-8df7-bb44599e25e7)
+## THEMES
+# LIGHT
+![image](https://github.com/user-attachments/assets/2799d022-691b-4c5a-88c3-440eac5e8319)
+# CYBERPUNK
+![image](https://github.com/user-attachments/assets/fd924624-dae3-47de-be62-3c0cd741ee52)
 
 ## Table of Contents
 1. [Project Overview](#project-overview)
