@@ -1,7 +1,9 @@
 # Python Code Generator
 # IMAGES
 ## MAIN
-![image](https://github.com/user-attachments/assets/b7b81d2d-3b5b-4124-8595-21785abadf25)
+
+<img src="[./images/editor-screenshot.png](https://github.com/user-attachments/assets/b7b81d2d-3b5b-4124-8595-21785abadf25)" alt="Editor" width="700" />
+
 ## CODE ASSISTANT
 ![image](https://github.com/user-attachments/assets/025ed557-9f77-4fdc-8df7-bb44599e25e7)
 ## THEMES
