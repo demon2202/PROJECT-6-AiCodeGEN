@@ -1,6 +1,5 @@
 # Python Code Generator
 
-## THEMES
 # DARK
 ![image](https://github.com/user-attachments/assets/793c3e41-241c-44f4-82c0-7ca3de72f636)
 # LIGHT
